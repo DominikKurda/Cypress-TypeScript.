@@ -1,0 +1,109 @@
+/// <reference types="cypress" />
+
+const PRODUCTS: string[] = [
+    'http://www.selenium-shop.pl/produkt/koszulka-tottenham-hotspur-f-c/',
+    'http://www.selenium-shop.pl/produkt/14/',
+    'http://www.selenium-shop.pl/produkt/koszulka-liverpool-fc/',
+];
+
+const CHECKOUT_URL = 'http://www.selenium-shop.pl/zamowienie/';
+
+const CUSTOMER: Record<string, string> = {
+    '#billing_first_name': 'Jan',
+    '#billing_last_name': 'Kowalski',
+    '#billing_address_1': 'ul. Testowa 1',
+    '#billing_postcode': '00-001',
+    '#billing_city': 'Warszawa',
+    '#billing_phone': '123456789',
+    '#billing_email': 'jan.kowalski@example.com',
+};
+
+function highlight(selector: string) {
+    return cy.get(selector)
+        .scrollIntoView()
+        .should('be.visible')
+        .then(($element) => {
+            $element.css('outline', '3px solid orange');
+        });
+}
+
+describe('Zakup trzech produktów', () => {
+    it('pozwala złożyć zamówienie', () => {
+        // Pominięcie zgłaszanego wcześniej błędu skryptu strony
+        cy.on('uncaught:exception', (error) => {
+            if (error.message.includes('Script error.')) {
+                return false;
+            }
+        });
+
+        cy.viewport(1920, 1080);
+
+        // 1. Dodanie produktów
+        for (const productUrl of PRODUCTS) {
+            cy.visit(productUrl);
+
+            highlight('button.single_add_to_cart_button');
+
+            cy.get('button.single_add_to_cart_button')
+                .should('be.enabled')
+                .trigger('mouseover');
+
+            cy.get('button.single_add_to_cart_button').click();
+
+            cy.get('.woocommerce-message')
+                .should('be.visible')
+                .invoke('text')
+                .should('match', /dodano|added/i);
+
+            highlight('.woocommerce-message');
+        }
+
+        // 2. Przejście do formularza zamówienia
+        cy.visit(CHECKOUT_URL);
+
+        cy.get('#billing_first_name').should('be.visible');
+
+        // 3. Wypełnienie danych klienta
+        for (const [selector, value] of Object.entries(CUSTOMER)) {
+            highlight(selector);
+
+            cy.get(selector)
+                .click()
+                .type(value, { delay: 30 })
+                .should('have.value', value);
+        }
+
+        // 4. Wybór pierwszej metody płatności
+        cy.get('li.wc_payment_method label')
+            .first()
+            .scrollIntoView()
+            .should('be.visible')
+            .then(($label) => {
+                $label.css('outline', '3px solid orange');
+            });
+
+        cy.get('li.wc_payment_method label')
+            .first()
+            .trigger('mouseover');
+
+        cy.get('li.wc_payment_method label')
+            .first()
+            .click();
+
+        // 5. Złożenie zamówienia
+        highlight('#place_order');
+
+        cy.get('#place_order').trigger('mouseover');
+
+        cy.get('#place_order')
+            .should('be.visible')
+            .and('be.enabled')
+            .click();
+
+        // 6. Sprawdzenie potwierdzenia
+        cy.url({ timeout: 10000 })
+            .should('match', /.*\/order-received\/.*/);
+
+        highlight('.woocommerce-thankyou-order-received');
+    });
+});
