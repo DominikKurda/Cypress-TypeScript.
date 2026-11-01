@@ -157,3 +157,153 @@ describe('Rezerwacja biletu w BlazeDemo', () => {
     highlight(transactionId);
   });
 });
+
+
+
+
+
+kod z terminala 
+
+New-Item -ItemType Directory -Force -Path ".\cypress\e2e"
+
+@'
+/// <reference types="cypress" />
+
+const BASE_URL = 'https://blazedemo.com';
+
+const ROUTE = {
+  from: 'Paris',
+  to: 'London',
+};
+
+const PASSENGER: Record<string, string> = {
+  '#inputName': 'Jan Kowalski',
+  '#address': 'ul. Marszałkowska 1',
+  '#city': 'Warszawa',
+  '#state': 'Mazowieckie',
+  '#zipCode': '00-001',
+  '#creditCardNumber': '4111111111111111',
+  'input[name="creditCardMonth"]': '12',
+  'input[name="creditCardYear"]': '2028',
+  '#nameOnCard': 'JAN KOWALSKI',
+};
+
+function highlight(selector: string) {
+  return cy.get(selector)
+    .scrollIntoView()
+    .should('be.visible')
+    .then(($element) => {
+      $element.css('outline', '3px solid orange');
+    });
+}
+
+function typeVisible(selector: string, value: string) {
+  highlight(selector);
+  cy.get(selector).clear();
+  cy.get(selector).type(value, { delay: 30 });
+  cy.get(selector).should('have.value', value);
+}
+
+function clickVisible(selector: string) {
+  highlight(selector);
+  cy.get(selector)
+    .should('be.enabled')
+    .click();
+}
+
+function selectVisible(selector: string, value: string) {
+  highlight(selector);
+  cy.get(selector).select(value);
+  cy.get(selector).should('have.value', value);
+}
+
+describe('Rezerwacja biletu w BlazeDemo', () => {
+  it('pozwala kupić bilet z Paryża do Londynu', () => {
+    // Pominięcie dwóch zgłoszonych wyjątków strony
+    cy.on('uncaught:exception', (error) => {
+      const message = error.message;
+      const stack = error.stack ?? '';
+
+      const bootstrapError =
+        message.includes('a is not a function') &&
+        stack.includes('bootstrap.min.js');
+
+      const jqueryError =
+        message.includes('jQuery is not defined') &&
+        stack.includes('bootstrap-table.js');
+
+      if (bootstrapError || jqueryError) {
+        return false;
+      }
+    });
+
+    cy.viewport(1920, 1080);
+
+    cy.log('1. Otwarcie strony');
+    cy.visit(BASE_URL);
+
+    cy.log('2. Wybór trasy Paris - London');
+    selectVisible('select[name="fromPort"]', ROUTE.from);
+    selectVisible('select[name="toPort"]', ROUTE.to);
+
+    cy.log('3. Wyszukanie lotów');
+    clickVisible('input[type="submit"]');
+    cy.location('pathname').should('eq', '/reserve.php');
+
+    cy.log('4. Wybór pierwszego lotu');
+    cy.get('table tbody tr')
+      .first()
+      .should('be.visible');
+
+    clickVisible(
+      'table tbody tr:first-child input[type="submit"]'
+    );
+
+    cy.location('pathname').should('eq', '/purchase.php');
+
+    cy.log('5. Wypełnienie danych pasażera');
+    for (const [selector, value] of Object.entries(PASSENGER)) {
+      typeVisible(selector, value);
+    }
+
+    cy.log('6. Zapamiętanie danych');
+    cy.get('body').then(($body) => {
+      if ($body.find('#rememberMe').is(':visible')) {
+        highlight('#rememberMe');
+        cy.get('#rememberMe').check();
+        cy.get('#rememberMe').should('be.checked');
+      }
+    });
+
+    cy.log('7. Zakup biletu');
+    clickVisible('input[type="submit"]');
+
+    cy.log('8. Sprawdzenie potwierdzenia');
+    cy.location('pathname', { timeout: 10000 })
+      .should('eq', '/confirmation.php');
+
+    cy.get('h1')
+      .should('be.visible')
+      .invoke('text')
+      .should('match', /Thank you for your purchase/i);
+
+    highlight('h1');
+
+    cy.log('9. Sprawdzenie ID transakcji');
+    const transactionId =
+      'table tbody tr:nth-child(1) td:nth-child(2)';
+
+    cy.get(transactionId)
+      .should('be.visible')
+      .should(($cell) => {
+        expect($cell.text().trim()).to.match(/^\d+$/);
+      });
+
+    highlight(transactionId);
+  });
+});
+'@ | Set-Content -Encoding utf8 ".\cypress\e2e\bilet.cy.ts"
+
+plecenie 
+
+npx cypress run --headed --spec "cypress/e2e/bilet.cy.ts"
