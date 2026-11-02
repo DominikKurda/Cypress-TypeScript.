@@ -1,0 +1,165 @@
+/// <reference types="cypress" />
+
+const BASE_URL = 'https://blazedemo.com';
+
+const ROUTES = [
+  { from: 'Paris', to: 'London' },
+  { from: 'Boston', to: 'Berlin' },
+  { from: 'Philadelphia', to: 'Rome' },
+];
+
+const PASSENGER: Record<string, string> = {
+  '#inputName': 'Jan Kowalski',
+  '#address': 'ul. Marszałkowska 1',
+  '#city': 'Warszawa',
+  '#state': 'Mazowieckie',
+  '#zipCode': '00-001',
+  '#creditCardNumber': '4111111111111111',
+  'input[name="creditCardMonth"]': '12',
+  'input[name="creditCardYear"]': '2028',
+  '#nameOnCard': 'JAN KOWALSKI',
+};
+
+function highlight(selector: string) {
+  return cy.get(selector)
+    .scrollIntoView()
+    .should('be.visible')
+    .then(($element) => {
+      $element.css('outline', '3px solid orange');
+    });
+}
+
+function typeVisible(selector: string, value: string) {
+  highlight(selector);
+
+  cy.get(selector).clear();
+  cy.get(selector).type(value, { delay: 30 });
+  cy.get(selector).should('have.value', value);
+}
+
+function clickVisible(selector: string) {
+  highlight(selector);
+
+  cy.get(selector)
+    .should('be.enabled')
+    .click();
+}
+
+function selectVisible(selector: string, value: string) {
+  highlight(selector);
+
+  cy.get(selector).select(value);
+  cy.get(selector).should('have.value', value);
+}
+
+describe('Rezerwacja wielu lotów w BlazeDemo', () => {
+  beforeEach(() => {
+    // Pominięcie dwóch wcześniej zgłoszonych wyjątków strony
+    cy.on('uncaught:exception', (error) => {
+      const message = error.message;
+      const stack = error.stack ?? '';
+
+      const bootstrapError =
+        message.includes('a is not a function') &&
+        stack.includes('bootstrap.min.js');
+
+      const jqueryError =
+        message.includes('jQuery is not defined') &&
+        stack.includes('bootstrap-table.js');
+
+      if (bootstrapError || jqueryError) {
+        return false;
+      }
+    });
+
+    cy.viewport(1920, 1080);
+    cy.visit(BASE_URL);
+  });
+
+  for (const route of ROUTES) {
+    it(`rezerwuje lot ${route.from} - ${route.to}`, () => {
+      // 1. Wybór trasy
+      cy.log(`1. Wybór trasy: ${route.from} - ${route.to}`);
+
+      selectVisible('select[name="fromPort"]', route.from);
+      selectVisible('select[name="toPort"]', route.to);
+
+      // 2. Wyszukanie lotów
+      cy.log('2. Wyszukanie lotów');
+
+      clickVisible('input[type="submit"]');
+
+      cy.location('pathname')
+        .should('eq', '/reserve.php');
+
+      cy.get('h3')
+        .should('contain.text', route.from)
+        .and('contain.text', route.to);
+
+      // 3. Wybór pierwszego lotu
+      cy.log('3. Wybór pierwszego lotu');
+
+      cy.get('table tbody tr')
+        .first()
+        .should('be.visible');
+
+      clickVisible(
+        'table tbody tr:first-child input[type="submit"]'
+      );
+
+      cy.location('pathname')
+        .should('eq', '/purchase.php');
+
+      // 4. Wypełnienie formularza
+      cy.log('4. Wypełnienie danych pasażera');
+
+      for (const [selector, value] of Object.entries(PASSENGER)) {
+        typeVisible(selector, value);
+      }
+
+      // 5. Zapamiętanie danych
+      cy.log('5. Zapamiętanie danych');
+
+      cy.get('body').then(($body) => {
+        if ($body.find('#rememberMe').is(':visible')) {
+          highlight('#rememberMe');
+
+          cy.get('#rememberMe').check();
+          cy.get('#rememberMe').should('be.checked');
+        }
+      });
+
+      // 6. Zakup biletu
+      cy.log('6. Zakup biletu');
+
+      clickVisible('input[type="submit"]');
+
+      // 7. Potwierdzenie zakupu
+      cy.log('7. Sprawdzenie potwierdzenia');
+
+      cy.location('pathname', { timeout: 10000 })
+        .should('eq', '/confirmation.php');
+
+      cy.get('h1')
+        .should('be.visible')
+        .invoke('text')
+        .should('match', /Thank you for your purchase/i);
+
+      highlight('h1');
+
+      // 8. Walidacja ID transakcji
+      cy.log('8. Sprawdzenie ID transakcji');
+
+      const transactionId =
+        'table tbody tr:nth-child(1) td:nth-child(2)';
+
+      cy.get(transactionId)
+        .should('be.visible')
+        .should(($cell) => {
+          expect($cell.text().trim()).to.match(/^\d+$/);
+        });
+
+      highlight(transactionId);
+    });
+  }
+});
